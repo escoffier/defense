@@ -1,0 +1,4 @@
+## Append samples you want in your CSV to this file as resources ##
+resources:
+- defense_v1_honeypot.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples

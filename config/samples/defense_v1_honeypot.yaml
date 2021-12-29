@@ -1,0 +1,6 @@
+apiVersion: defense.security.cn/v1
+kind: Honeypot
+metadata:
+  name: honeypot-sample
+spec:
+  # Add fields here

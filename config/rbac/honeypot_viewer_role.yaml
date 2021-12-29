@@ -1,0 +1,20 @@
+# permissions for end users to view honeypots.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: honeypot-viewer-role
+rules:
+- apiGroups:
+  - defense.security.cn
+  resources:
+  - honeypots
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - defense.security.cn
+  resources:
+  - honeypots/status
+  verbs:
+  - get

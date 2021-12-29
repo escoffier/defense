@@ -1,0 +1,20 @@
+domain: security.cn
+layout:
+- go.kubebuilder.io/v3
+multigroup: true
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: defense
+repo: scm.tensorsecurity.cn/tensorsecurity-rd/tensor-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: security.cn
+  group: defense
+  kind: Honeypot
+  path: scm.tensorsecurity.cn/tensorsecurity-rd/tensor-operator/apis/defense/v1
+  version: v1
+version: "3"

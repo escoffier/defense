@@ -1,0 +1,24 @@
+# permissions for end users to edit honeypots.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: honeypot-editor-role
+rules:
+- apiGroups:
+  - defense.security.cn
+  resources:
+  - honeypots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - defense.security.cn
+  resources:
+  - honeypots/status
+  verbs:
+  - get
