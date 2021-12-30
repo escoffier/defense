@@ -24,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ref "k8s.io/client-go/tools/reference"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,6 +43,8 @@ type HoneypotReconciler struct {
 //+kubebuilder:rbac:groups=defense.security.cn,resources=honeypots,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=defense.security.cn,resources=honeypots/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=defense.security.cn,resources=honeypots/finalizers,verbs=update
+//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -67,17 +71,18 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	honeypot = honeypot.DeepCopy()
 	honeypot.Status.Active = nil
 	deploy := &appv1.Deployment{}
-	err = r.Get(ctx, req.NamespacedName, deploy)
+	err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: honeypot.Spec.WorkLoad}, deploy)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			err = r.createWorkload(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Name, honeypot)
+			err = r.createWorkload(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Spec.WorkLoad, honeypot)
 			if err != nil {
 				logger.Error(err, "falied to create honeypot deployment")
 				return ctrl.Result{}, err
 			}
+		} else {
+			logger.Error(err, "get deployment failed")
+			return ctrl.Result{}, err
 		}
-		logger.Error(err, "get deployment failed")
-		return ctrl.Result{}, err
 	}
 	deployRef, err := ref.GetReference(r.Scheme, deploy)
 	if err != nil {
@@ -87,17 +92,18 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	honeypot.Status.Active = append(honeypot.Status.Active, deployRef)
 
 	svc := &corev1.Service{}
-	err = r.Get(ctx, req.NamespacedName, svc)
+	err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: honeypot.Spec.ServiceName}, svc)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			err = r.createService(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Name, honeypot)
+			err = r.createService(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Spec.ServiceName, honeypot)
 			if err != nil {
-				logger.Error(err, "falied to create honeypot deployment")
+				logger.Error(err, "falied to create honeypot service")
 				return ctrl.Result{}, err
 			}
+		} else {
+			logger.Error(err, "get service failed")
+			return ctrl.Result{}, err
 		}
-		logger.Error(err, "get service failed")
-		return ctrl.Result{}, err
 	}
 
 	svcRef, err := ref.GetReference(r.Scheme, svc)
@@ -115,7 +121,35 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *HoneypotReconciler) createWorkload(ctx context.Context, clusterKey, namespace, name string, honeypot *defensev1.Honeypot) error {
-	deploy := &appv1.Deployment{}
+	var replica int32 = 1
+	labelSelector := &metav1.LabelSelector{
+		MatchLabels: map[string]string{"app": "honeypot"},
+	}
+	deploy := &appv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: appv1.DeploymentSpec{
+			Replicas: &replica,
+			Selector: labelSelector,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "honeypot"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "honeypot",
+						Image: "docker.io/kennethreitz/httpbin",
+						Ports: []corev1.ContainerPort{{
+							ContainerPort: 80,
+							Protocol:      corev1.ProtocolTCP,
+						}},
+					}},
+				},
+			},
+		},
+	}
 	ctrl.SetControllerReference(honeypot, deploy, r.Scheme)
 	return r.Create(ctx, deploy)
 }
@@ -128,6 +162,11 @@ func (r *HoneypotReconciler) createService(ctx context.Context, clusterKey, name
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": "honeypot"},
+			Ports: []corev1.ServicePort{{
+				Protocol:   corev1.ProtocolTCP,
+				Port:       8000,
+				TargetPort: intstr.FromInt(80),
+			}},
 		},
 	}
 	ctrl.SetControllerReference(honeypot, svc, r.Scheme)

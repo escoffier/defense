@@ -4,3 +4,6 @@ metadata:
   name: honeypot-sample
 spec:
   # Add fields here
+  clusterKey: abcd122
+  service: test111
+  workload: test222
