@@ -5,5 +5,8 @@ metadata:
 spec:
   # Add fields here
   clusterKey: abcd122
-  service: test111
-  workload: test222
+  service: aaaaaa-svc
+  workload: bbbbbb-deploy
+  image: docker.io/kennethreitz/httpbin
+  workloadPort: 80
+  servicePort: 8000

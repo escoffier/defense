@@ -37,11 +37,26 @@ spec:
             description: HoneypotSpec defines the desired state of Honeypot
             properties:
               clusterKey:
+                description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+                  Important: Run "make" to regenerate code after modifying this file'
+                type: string
+              image:
                 type: string
               service:
                 type: string
+              servicePort:
+                type: integer
               workload:
                 type: string
+              workloadPort:
+                type: integer
+            required:
+            - clusterKey
+            - image
+            - service
+            - servicePort
+            - workload
+            - workloadPort
             type: object
           status:
             description: HoneypotStatus defines the observed state of Honeypot

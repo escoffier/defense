@@ -28,10 +28,12 @@ import (
 type HoneypotSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
-	ClusterKey  string `json:"clusterKey,omitempty"`
-	ServiceName string `json:"service,omitempty"`
-	WorkLoad    string `json:"workload,omitempty"`
+	ClusterKey   string `json:"clusterKey"`
+	Service      string `json:"service"`
+	ServicePort  int    `json:"servicePort"`
+	WorkLoad     string `json:"workload"`
+	WorkLoadPort int    `json:"workloadPort"`
+	Image        string `json:"image"`
 }
 
 // HoneypotStatus defines the observed state of Honeypot

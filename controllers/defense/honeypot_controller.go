@@ -18,6 +18,7 @@ package defense
 
 import (
 	"context"
+	"fmt"
 
 	appv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,8 @@ import (
 
 	defensev1 "scm.tensorsecurity.cn/tensorsecurity-rd/tensor-operator/apis/defense/v1"
 )
+
+const labelKey = "app"
 
 // HoneypotReconciler reconciles a Honeypot object
 type HoneypotReconciler struct {
@@ -69,21 +72,30 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	honeypot = honeypot.DeepCopy()
+	objRefs := honeypot.Status.Active
 	honeypot.Status.Active = nil
+	// var objRefs []*corev1.ObjectReference
+
+	oldDeployRef := getObjRef(objRefs, "Deployment")
+	oldSvcRef := getObjRef(objRefs, "Service")
 	deploy := &appv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: honeypot.Spec.WorkLoad}, deploy)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			err = r.createWorkload(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Spec.WorkLoad, honeypot)
+			deploy = r.buildDeployment(honeypot)
+			// err = r.createWorkload(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Spec.WorkLoad, honeypot)
+			err = r.Create(ctx, deploy)
 			if err != nil {
 				logger.Error(err, "falied to create honeypot deployment")
 				return ctrl.Result{}, err
 			}
+
 		} else {
 			logger.Error(err, "get deployment failed")
 			return ctrl.Result{}, err
 		}
 	}
+
 	deployRef, err := ref.GetReference(r.Scheme, deploy)
 	if err != nil {
 		logger.Error(err, "unabable to make reference to deployment", "deployment", deploy)
@@ -91,11 +103,26 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	honeypot.Status.Active = append(honeypot.Status.Active, deployRef)
 
+	if oldDeployRef != nil {
+		if oldDeployRef.Name != honeypot.Spec.WorkLoad || oldDeployRef.Namespace != req.Namespace {
+			oldDeploy := &appv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Namespace: oldDeployRef.Namespace, Name: oldDeployRef.Name},
+			}
+			// r.Get(ctx, types.NamespacedName{Namespace: oldDeployRef.Namespace, Name: oldDeployRef.Name}, oldDeploy)
+			err = r.Delete(ctx, oldDeploy)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
 	svc := &corev1.Service{}
-	err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: honeypot.Spec.ServiceName}, svc)
+	err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: honeypot.Spec.Service}, svc)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			err = r.createService(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Spec.ServiceName, honeypot)
+			// err = r.createService(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Spec.ServiceName, honeypot)
+			svc = r.buildService(honeypot)
+			err = r.Create(ctx, svc)
 			if err != nil {
 				logger.Error(err, "falied to create honeypot service")
 				return ctrl.Result{}, err
@@ -112,6 +139,19 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 	honeypot.Status.Active = append(honeypot.Status.Active, svcRef)
+
+	if oldSvcRef != nil {
+		if oldSvcRef.Name != honeypot.Spec.Service || oldSvcRef.Namespace != req.Namespace {
+			oldSvc := corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Namespace: oldSvcRef.Namespace, Name: oldSvcRef.Name},
+			}
+			err = r.Delete(ctx, &oldSvc)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
 	err = r.Status().Update(ctx, honeypot)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -120,29 +160,30 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *HoneypotReconciler) createWorkload(ctx context.Context, clusterKey, namespace, name string, honeypot *defensev1.Honeypot) error {
+func (r *HoneypotReconciler) buildDeployment(honeypot *defensev1.Honeypot) *appv1.Deployment {
 	var replica int32 = 1
 	labelSelector := &metav1.LabelSelector{
-		MatchLabels: map[string]string{"app": "honeypot"},
+		MatchLabels: getLabel(honeypot),
 	}
 	deploy := &appv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
+			Namespace: honeypot.Namespace,
+			Name:      honeypot.Spec.WorkLoad,
 		},
 		Spec: appv1.DeploymentSpec{
 			Replicas: &replica,
 			Selector: labelSelector,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "honeypot"},
+					Labels: getLabel(honeypot),
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
 						Name:  "honeypot",
-						Image: "docker.io/kennethreitz/httpbin",
+						Image: honeypot.Spec.Image,
+						// Image: "docker.io/kennethreitz/httpbin",
 						Ports: []corev1.ContainerPort{{
-							ContainerPort: 80,
+							ContainerPort: int32(honeypot.Spec.WorkLoadPort),
 							Protocol:      corev1.ProtocolTCP,
 						}},
 					}},
@@ -151,26 +192,40 @@ func (r *HoneypotReconciler) createWorkload(ctx context.Context, clusterKey, nam
 		},
 	}
 	ctrl.SetControllerReference(honeypot, deploy, r.Scheme)
-	return r.Create(ctx, deploy)
+	return deploy
 }
 
-func (r *HoneypotReconciler) createService(ctx context.Context, clusterKey, namespace, name string, honeypot *defensev1.Honeypot) error {
+func (r *HoneypotReconciler) buildService(honeypot *defensev1.Honeypot) *corev1.Service {
+
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      honeypot.Spec.Service,
+			Namespace: honeypot.Namespace,
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{"app": "honeypot"},
+			Selector: getLabel(honeypot),
 			Ports: []corev1.ServicePort{{
 				Protocol:   corev1.ProtocolTCP,
-				Port:       8000,
-				TargetPort: intstr.FromInt(80),
+				Port:       int32(honeypot.Spec.ServicePort),
+				TargetPort: intstr.FromInt(honeypot.Spec.WorkLoadPort),
 			}},
 		},
 	}
 	ctrl.SetControllerReference(honeypot, svc, r.Scheme)
-	return r.Create(ctx, svc)
+	return svc
+}
+
+func getObjRef(refers []*corev1.ObjectReference, kind string) *corev1.ObjectReference {
+	for _, ref := range refers {
+		if ref.Kind == kind {
+			return ref
+		}
+	}
+	return nil
+}
+
+func getLabel(honeypot *defensev1.Honeypot) map[string]string {
+	return map[string]string{labelKey: fmt.Sprintf("%s-%s", honeypot.Name, honeypot.Spec.WorkLoad)}
 }
 
 // SetupWithManager sets up the controller with the Manager.
