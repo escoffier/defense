@@ -22,6 +22,7 @@ import (
 
 	appv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -74,7 +75,6 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	honeypot = honeypot.DeepCopy()
 	objRefs := honeypot.Status.Active
 	honeypot.Status.Active = nil
-	// var objRefs []*corev1.ObjectReference
 
 	oldDeployRef := getObjRef(objRefs, "Deployment")
 	oldSvcRef := getObjRef(objRefs, "Service")
@@ -83,7 +83,6 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		if errors.IsNotFound(err) {
 			deploy = r.buildDeployment(honeypot)
-			// err = r.createWorkload(ctx, honeypot.Spec.ClusterKey, honeypot.Namespace, honeypot.Spec.WorkLoad, honeypot)
 			err = r.Create(ctx, deploy)
 			if err != nil {
 				logger.Error(err, "falied to create honeypot deployment")
@@ -152,9 +151,13 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	err = r.Status().Update(ctx, honeypot)
-	if err != nil {
-		return ctrl.Result{}, err
+	logger.Info(honeypot.ResourceVersion)
+	if !equality.Semantic.DeepEqual(svcRef, oldSvcRef) || !equality.Semantic.DeepEqual(deployRef, oldDeployRef) {
+		logger.Info("update Honeyspot status")
+		err = r.Status().Update(ctx, honeypot)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil
