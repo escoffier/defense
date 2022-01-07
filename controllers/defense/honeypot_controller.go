@@ -81,6 +81,43 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	oldDeployRef := getObjRef(objRefs, "Deployment")
 	oldSvcRef := getObjRef(objRefs, "Service")
+	oldSecretRef := getObjRef(objRefs, "Secret")
+
+	// secret := &corev1.Secret{}
+	// err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: req.Name}, secret)
+	// if err != nil {
+	// 	if errors.IsNotFound(err) {
+	// 		return nil, err
+	// 	}
+	// 	return nil, err
+	// }
+	secret, err := r.buildSecrect(ctx, honeypot)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	secretRef, err := ref.GetReference(r.Scheme, secret)
+	if err != nil {
+		logger.Error(err, "unabable to make reference to secret", "secret", secret)
+		return ctrl.Result{}, err
+	}
+
+	honeypot.Status.Active = append(honeypot.Status.Active, secretRef)
+
+	if oldSecretRef != nil {
+		if oldSecretRef.Namespace != honeypot.Namespace || oldSecretRef.Name != honeypot.Name {
+			oldSecret := corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: honeypot.Namespace,
+					Name:      honeypot.Name,
+				},
+			}
+			err = r.Delete(ctx, &oldSecret)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
 	deploy := &appv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: honeypot.Spec.WorkLoad}, deploy)
 	if err != nil {
@@ -155,7 +192,8 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	logger.Info(honeypot.ResourceVersion)
-	if !equality.Semantic.DeepEqual(svcRef, oldSvcRef) || !equality.Semantic.DeepEqual(deployRef, oldDeployRef) {
+	if !equality.Semantic.DeepEqual(svcRef, oldSvcRef) || !equality.Semantic.DeepEqual(deployRef, oldDeployRef) ||
+		!equality.Semantic.DeepEqual(secretRef, oldSecretRef) {
 		logger.Info("update Honeyspot status")
 		err = r.Status().Update(ctx, honeypot)
 		if err != nil {
@@ -222,6 +260,7 @@ func (r *HoneypotReconciler) buildService(honeypot *defensev1.Honeypot) *corev1.
 	var ports []corev1.ServicePort
 	for _, p := range honeypot.Spec.Ports {
 		ports = append(ports, corev1.ServicePort{
+			Name:       fmt.Sprintf("%d", p.Port),
 			Port:       p.Port,
 			TargetPort: intstr.IntOrString{Type: 0, IntVal: p.TargetPort},
 		})
@@ -239,6 +278,39 @@ func (r *HoneypotReconciler) buildService(honeypot *defensev1.Honeypot) *corev1.
 	}
 	ctrl.SetControllerReference(honeypot, svc, r.Scheme)
 	return svc
+}
+
+func (r *HoneypotReconciler) buildSecrect(ctx context.Context, honeypot *defensev1.Honeypot) (*corev1.Secret, error) {
+	secretName := types.NamespacedName{Namespace: honeypot.Namespace, Name: honeypot.Name}
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, secretName, secret)
+	if err != nil {
+		if errors.IsNotFound(err) {
+
+			dockerCfg, err := dockerCfgJSONContent(honeypot.Spec.Secrets)
+			if err != nil {
+				return nil, err
+			}
+			secret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: honeypot.Namespace,
+					Name:      honeypot.Name,
+				},
+				Data: map[string][]byte{corev1.DockerConfigJsonKey: dockerCfg},
+				Type: corev1.SecretTypeDockerConfigJson,
+			}
+			ctrl.SetControllerReference(honeypot, secret, r.Scheme)
+
+			err = r.Create(ctx, secret)
+			if err != nil {
+				return nil, err
+			}
+
+			return secret, err
+		}
+		return nil, err
+	}
+	return secret, nil
 }
 
 func getObjRef(refers []*corev1.ObjectReference, kind string) *corev1.ObjectReference {
@@ -260,5 +332,6 @@ func (r *HoneypotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&defensev1.Honeypot{}).
 		Owns(&corev1.Service{}).
 		Owns(&appv1.Deployment{}).
+		Owns(&corev1.Secret{}).
 		Complete(r)
 }

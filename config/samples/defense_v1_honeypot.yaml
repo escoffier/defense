@@ -11,3 +11,9 @@ spec:
   ports:
   - port: 8000
     targetPort: 80
+  - port: 6437
+    targetPort: 6437
+  secrets:
+  - username: robbie
+    password: abdee
+    server: harbor.abc.com

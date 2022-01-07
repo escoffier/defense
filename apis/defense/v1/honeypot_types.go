@@ -28,16 +28,24 @@ import (
 type HoneypotSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	ClusterKey string        `json:"clusterKey"`
-	Service    string        `json:"service"`
-	Ports      []ServicePort `json:"ports"`
-	WorkLoad   string        `json:"workload"`
-	Image      string        `json:"image"`
+	ClusterKey string            `json:"clusterKey"`
+	Service    string            `json:"service"`
+	Ports      []ServicePort     `json:"ports"`
+	WorkLoad   string            `json:"workload"`
+	Image      string            `json:"image"`
+	Secrets    []ImagePullSecret `json:"secrets"`
 }
 
 type ServicePort struct {
 	Port       int32 `json:"port"`
 	TargetPort int32 `json:"targetPort"`
+}
+
+type ImagePullSecret struct {
+	UserName string `json:"username"`
+	Password string `json:"password"`
+	Email    string `json:"email,omitempty"`
+	Server   string `json:"server"`
 }
 
 // HoneypotStatus defines the observed state of Honeypot

@@ -56,6 +56,23 @@ spec:
                   - targetPort
                   type: object
                 type: array
+              secrets:
+                items:
+                  properties:
+                    email:
+                      type: string
+                    password:
+                      type: string
+                    server:
+                      type: string
+                    username:
+                      type: string
+                  required:
+                  - password
+                  - server
+                  - username
+                  type: object
+                type: array
               service:
                 type: string
               workload:
@@ -64,6 +81,7 @@ spec:
             - clusterKey
             - image
             - ports
+            - secrets
             - service
             - workload
             type: object
