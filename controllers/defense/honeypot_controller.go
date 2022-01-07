@@ -36,7 +36,10 @@ import (
 	defensev1 "scm.tensorsecurity.cn/tensorsecurity-rd/tensor-operator/apis/defense/v1"
 )
 
-const labelKey = "app"
+const (
+	labelKey      = "app"
+	contanierName = "honeyspot"
+)
 
 // HoneypotReconciler reconciles a Honeypot object
 type HoneypotReconciler struct {
@@ -156,6 +159,18 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		logger.Info("update Honeyspot status")
 		err = r.Status().Update(ctx, honeypot)
 		if err != nil {
+			if errors.IsConflict(err) {
+				newHoneypot := &defensev1.Honeypot{}
+				err := r.Get(ctx, req.NamespacedName, newHoneypot)
+				if err != nil {
+					if errors.IsNotFound(err) {
+						logger.Info("honeypot is deleted")
+						return ctrl.Result{}, nil
+					}
+					return ctrl.Result{}, err
+				}
+
+			}
 			return ctrl.Result{}, err
 		}
 	}
@@ -168,6 +183,14 @@ func (r *HoneypotReconciler) buildDeployment(honeypot *defensev1.Honeypot) *appv
 	labelSelector := &metav1.LabelSelector{
 		MatchLabels: getLabel(honeypot),
 	}
+
+	var ports []corev1.ContainerPort
+	for _, p := range honeypot.Spec.Ports {
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: p.TargetPort,
+		})
+	}
+
 	deploy := &appv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: honeypot.Namespace,
@@ -182,13 +205,9 @@ func (r *HoneypotReconciler) buildDeployment(honeypot *defensev1.Honeypot) *appv
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
-						Name:  "honeypot",
+						Name:  contanierName,
 						Image: honeypot.Spec.Image,
-						// Image: "docker.io/kennethreitz/httpbin",
-						Ports: []corev1.ContainerPort{{
-							ContainerPort: int32(honeypot.Spec.WorkLoadPort),
-							Protocol:      corev1.ProtocolTCP,
-						}},
+						Ports: ports,
 					}},
 				},
 			},
@@ -200,6 +219,14 @@ func (r *HoneypotReconciler) buildDeployment(honeypot *defensev1.Honeypot) *appv
 
 func (r *HoneypotReconciler) buildService(honeypot *defensev1.Honeypot) *corev1.Service {
 
+	var ports []corev1.ServicePort
+	for _, p := range honeypot.Spec.Ports {
+		ports = append(ports, corev1.ServicePort{
+			Port:       p.Port,
+			TargetPort: intstr.IntOrString{Type: 0, IntVal: p.TargetPort},
+		})
+	}
+
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      honeypot.Spec.Service,
@@ -207,11 +234,7 @@ func (r *HoneypotReconciler) buildService(honeypot *defensev1.Honeypot) *corev1.
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: getLabel(honeypot),
-			Ports: []corev1.ServicePort{{
-				Protocol:   corev1.ProtocolTCP,
-				Port:       int32(honeypot.Spec.ServicePort),
-				TargetPort: intstr.FromInt(honeypot.Spec.WorkLoadPort),
-			}},
+			Ports:    ports,
 		},
 	}
 	ctrl.SetControllerReference(honeypot, svc, r.Scheme)

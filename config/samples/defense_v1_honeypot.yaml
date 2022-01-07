@@ -8,5 +8,6 @@ spec:
   service: aaaaaa-svc
   workload: bbbbbb-deploy
   image: docker.io/kennethreitz/httpbin
-  workloadPort: 80
-  servicePort: 8000
+  ports:
+  - port: 8000
+    targetPort: 80
