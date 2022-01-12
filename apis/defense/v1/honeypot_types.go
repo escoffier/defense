@@ -33,7 +33,7 @@ type HoneypotSpec struct {
 	Ports      []ServicePort     `json:"ports"`
 	WorkLoad   string            `json:"workload"`
 	Image      string            `json:"image"`
-	Secrets    []ImagePullSecret `json:"secrets"`
+	Secrets    []ImagePullSecret `json:"secrets,omitempty"`
 }
 
 type ServicePort struct {
@@ -52,9 +52,11 @@ type ImagePullSecret struct {
 type HoneypotStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Active []*corev1.ObjectReference `json:"active,omitempty"`
+	Active         []*corev1.ObjectReference `json:"active,omitempty"`
+	WorkLoadStatus string                    `json:"workLoadStatus,omitempty"`
 }
 
+// +genclient
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 

@@ -83,14 +83,6 @@ func (r *HoneypotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	oldSvcRef := getObjRef(objRefs, "Service")
 	oldSecretRef := getObjRef(objRefs, "Secret")
 
-	// secret := &corev1.Secret{}
-	// err = r.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: req.Name}, secret)
-	// if err != nil {
-	// 	if errors.IsNotFound(err) {
-	// 		return nil, err
-	// 	}
-	// 	return nil, err
-	// }
 	secret, err := r.buildSecrect(ctx, honeypot)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -247,6 +239,7 @@ func (r *HoneypotReconciler) buildDeployment(honeypot *defensev1.Honeypot) *appv
 						Image: honeypot.Spec.Image,
 						Ports: ports,
 					}},
+					ImagePullSecrets: []corev1.LocalObjectReference{{Name: honeypot.Name}},
 				},
 			},
 		},
